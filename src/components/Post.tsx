@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { Heart, MessageCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { Link, useNavigate } from 'react-router-dom';
 
 interface PostProps {
   post: {
@@ -19,15 +20,26 @@ interface PostProps {
     comments: { id: string }[];
   };
   onDelete?: () => void;
+  isDetailView?: boolean;
 }
 
-export default function Post({ post, onDelete }: PostProps) {
+export default function Post({ post, onDelete, isDetailView = false }: PostProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [isLiked, setIsLiked] = React.useState(
-    post.likes.some(like => like.user_id === user?.id)
+    post.likes && Array.isArray(post.likes) 
+      ? post.likes.some(like => like.user_id === user?.id)
+      : false
   );
-  const [likesCount, setLikesCount] = React.useState(post.likes.length);
-  const [commentsCount] = React.useState(post.comments.length);
+  const [likesCount, setLikesCount] = React.useState(
+    post.likes && Array.isArray(post.likes) ? post.likes.length : 0
+  );
+  const [commentsCount] = React.useState(
+    post.comments && Array.isArray(post.comments) ? post.comments.length : 0
+  );
+
+  // Ensure we have profile data, even if it's missing
+  const profileData = post.profiles || { username: 'Unknown User', avatar_url: null };
 
   const handleLike = async () => {
     if (!user) return;
@@ -70,18 +82,24 @@ export default function Post({ post, onDelete }: PostProps) {
       console.error('Error deleting post:', error);
     }
   };
+  
+  const handlePostClick = () => {
+    if (!isDetailView) {
+      navigate(`/post/${post.id}`);
+    }
+  };
 
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-4">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center">
           <img
-            src={post.profiles.avatar_url || `https://ui-avatars.com/api/?name=${post.profiles.username}`}
-            alt={post.profiles.username}
+            src={profileData.avatar_url || `https://ui-avatars.com/api/?name=${profileData.username}`}
+            alt={profileData.username}
             className="w-10 h-10 rounded-full"
           />
           <div className="ml-3">
-            <p className="font-medium">{post.profiles.username}</p>
+            <p className="font-medium">{profileData.username}</p>
             <p className="text-sm text-gray-500">
               {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
             </p>
@@ -98,15 +116,20 @@ export default function Post({ post, onDelete }: PostProps) {
         )}
       </div>
 
-      <p className="mb-4">{post.content}</p>
-      
-      {post.media_url && (
-        <img
-          src={post.media_url}
-          alt="Post attachment"
-          className="rounded-lg mb-4 max-h-96 w-full object-cover"
-        />
-      )}
+      <div 
+        className={!isDetailView ? "cursor-pointer" : ""}
+        onClick={handlePostClick}
+      >
+        <p className="mb-4">{post.content}</p>
+        
+        {post.media_url && (
+          <img
+            src={post.media_url}
+            alt="Post attachment"
+            className="rounded-lg mb-4 max-h-96 w-full object-cover"
+          />
+        )}
+      </div>
 
       <div className="flex items-center gap-6">
         <button
@@ -119,10 +142,20 @@ export default function Post({ post, onDelete }: PostProps) {
           <span>{likesCount}</span>
         </button>
 
-        <button className="flex items-center gap-2 text-gray-500">
-          <MessageCircle className="h-5 w-5" />
-          <span>{commentsCount}</span>
-        </button>
+        {!isDetailView ? (
+          <button 
+            onClick={() => navigate(`/post/${post.id}`)}
+            className="flex items-center gap-2 text-gray-500 hover:text-blue-500"
+          >
+            <MessageCircle className="h-5 w-5" />
+            <span>{commentsCount}</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 text-gray-500">
+            <MessageCircle className="h-5 w-5" />
+            <span>{commentsCount}</span>
+          </div>
+        )}
       </div>
     </div>
   );

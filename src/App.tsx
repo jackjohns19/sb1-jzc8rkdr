@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Profile from './pages/Profile';
+import PostView from './pages/PostView';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<Home />} />
               <Route path="/profile/:id" element={<Profile />} />
+              <Route path="/post/:id" element={<PostView />} />
             </Route>
           </Route>
         </Routes>

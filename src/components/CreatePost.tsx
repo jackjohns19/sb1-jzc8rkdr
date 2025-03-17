@@ -3,7 +3,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Image, Loader2 } from 'lucide-react';
 
-export default function CreatePost() {
+interface CreatePostProps {
+  onPostCreated?: () => void;
+}
+
+export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [content, setContent] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -12,15 +16,53 @@ export default function CreatePost() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() && !file) return;
+    if (!user) return;
 
     setIsLoading(true);
     try {
-      let mediaUrl = null;
+      // First, ensure the user has a profile
+      console.log('Checking for existing profile...');
+      const { data: existingProfile, error: profileCheckError } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .eq('id', user.id)
+        .maybeSingle();
       
+      if (profileCheckError) {
+        console.error('Error checking profile:', profileCheckError);
+      }
+      
+      // If no profile exists, create one with default values
+      if (!existingProfile) {
+        console.log('No profile found, creating one...');
+        
+        const defaultUsername = user.email?.split('@')[0] || `user_${Math.floor(Math.random() * 10000)}`;
+        
+        const { data: newProfile, error: createProfileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            username: defaultUsername,
+            avatar_url: null
+          })
+          .select()
+          .single();
+        
+        if (createProfileError) {
+          console.error('Error creating profile:', createProfileError);
+        } else {
+          console.log('Profile created successfully:', newProfile);
+        }
+      } else {
+        console.log('Using existing profile:', existingProfile);
+      }
+
+      // Now handle media upload if there's a file
+      let mediaUrl = null;
       if (file) {
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `${user?.id}/${fileName}`;
+        const filePath = `${user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('posts')
@@ -35,18 +77,32 @@ export default function CreatePost() {
         mediaUrl = publicUrl;
       }
 
-      const { error } = await supabase
+      // Finally, create the post
+      console.log('Creating post...');
+      const { data: newPost, error: postError } = await supabase
         .from('posts')
         .insert({
-          user_id: user?.id,
+          user_id: user.id,
           content: content.trim(),
           media_url: mediaUrl,
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (postError) {
+        console.error('Error creating post:', postError);
+        throw postError;
+      }
+      
+      console.log('Post created successfully:', newPost);
 
       setContent('');
       setFile(null);
+      
+      // Call the callback if it exists
+      if (onPostCreated) {
+        onPostCreated();
+      }
     } catch (error) {
       console.error('Error creating post:', error);
     } finally {
