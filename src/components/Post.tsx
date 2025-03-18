@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { Heart, MessageCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,20 +26,61 @@ interface PostProps {
 export default function Post({ post, onDelete, isDetailView = false }: PostProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [isLiked, setIsLiked] = React.useState(
+  const [isLiked, setIsLiked] = useState(
     post.likes && Array.isArray(post.likes) 
       ? post.likes.some(like => like.user_id === user?.id)
       : false
   );
-  const [likesCount, setLikesCount] = React.useState(
+  const [likesCount, setLikesCount] = useState(
     post.likes && Array.isArray(post.likes) ? post.likes.length : 0
   );
-  const [commentsCount] = React.useState(
+  const [commentsCount, setCommentsCount] = useState(
     post.comments && Array.isArray(post.comments) ? post.comments.length : 0
   );
 
   // Ensure we have profile data, even if it's missing
   const profileData = post.profiles || { username: 'Unknown User', avatar_url: null };
+
+  // Set up subscription to watch for comment changes
+  useEffect(() => {
+    // Set up initial comment count
+    setCommentsCount(post.comments?.length || 0);
+
+    // Set up subscription for comment changes
+    const commentSubscription = supabase
+      .channel(`post-comments-${post.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'comments',
+          filter: `post_id=eq.${post.id}`
+        },
+        () => {
+          // When a comment is added, increment the count
+          setCommentsCount(prevCount => prevCount + 1);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'comments',
+          filter: `post_id=eq.${post.id}`
+        },
+        () => {
+          // When a comment is deleted, decrement the count
+          setCommentsCount(prevCount => Math.max(0, prevCount - 1));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      commentSubscription.unsubscribe();
+    };
+  }, [post.id, post.comments]);
 
   const handleLike = async () => {
     if (!user) return;

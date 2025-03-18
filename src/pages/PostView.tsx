@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Post from '../components/Post';
+import CommentList from '../components/CommentList';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -154,7 +155,7 @@ export default function PostView() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto mt-8">
+    <div className="max-w-2xl mx-auto mt-8 pb-16">
       <div className="flex items-center mb-6">
         <button 
           onClick={() => navigate(-1)} 
@@ -171,7 +172,10 @@ export default function PostView() {
         isDetailView={true}
       />
       
-      {/* Future enhancement: Show comments here */}
+      {/* Comments section */}
+      <div className="mt-6 bg-white rounded-lg shadow p-6">
+        <CommentList postId={post.id} />
+      </div>
     </div>
   );
 } 
