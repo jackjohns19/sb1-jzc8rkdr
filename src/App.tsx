@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Profile from './pages/Profile';
 import PostView from './pages/PostView';
+import Debug from './pages/Debug';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/profile/:id" element={<Profile />} />
               <Route path="/post/:id" element={<PostView />} />
+              <Route path="/debug" element={<Debug />} />
             </Route>
           </Route>
         </Routes>
