@@ -10,8 +10,46 @@ interface CreatePostProps {
 export default function CreatePost({ onPostCreated }: CreatePostProps) {
   const [content, setContent] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    // Validate file type
+    if (!selectedFile.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      setError('Image size should be less than 5MB');
+      return;
+    }
+
+    setFile(selectedFile);
+    setImagePreview(URL.createObjectURL(selectedFile));
+    setError(null);
+  };
+
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert file to base64'));
+        }
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,6 +57,8 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
     if (!user) return;
 
     setIsLoading(true);
+    setError(null);
+
     try {
       // First, ensure the user has a profile
       console.log('Checking for existing profile...');
@@ -57,27 +97,20 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
         console.log('Using existing profile:', existingProfile);
       }
 
-      // Now handle media upload if there's a file
+      // Handle media upload if there's a file
       let mediaUrl = null;
       if (file) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `${user.id}/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('posts')
-          .upload(filePath, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('posts')
-          .getPublicUrl(filePath);
-
-        mediaUrl = publicUrl;
+        try {
+          // Convert image to base64
+          mediaUrl = await convertToBase64(file);
+        } catch (error) {
+          console.error('Error converting image to base64:', error);
+          setError('Failed to process image');
+          return;
+        }
       }
 
-      // Finally, create the post
+      // Create the post
       console.log('Creating post...');
       const { data: newPost, error: postError } = await supabase
         .from('posts')
@@ -96,8 +129,13 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       
       console.log('Post created successfully:', newPost);
 
+      // Reset form
       setContent('');
       setFile(null);
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+        setImagePreview(null);
+      }
       
       // Call the callback if it exists
       if (onPostCreated) {
@@ -105,6 +143,7 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
       }
     } catch (error) {
       console.error('Error creating post:', error);
+      setError('Failed to create post');
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +158,29 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
           placeholder="What's on your mind?"
           value={content}
           onChange={(e) => setContent(e.target.value)}
+          disabled={isLoading}
         />
+        
+        {imagePreview && (
+          <div className="mt-4 relative">
+            <img
+              src={imagePreview}
+              alt="Preview"
+              className="max-h-64 rounded-lg object-contain"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setFile(null);
+                URL.revokeObjectURL(imagePreview);
+                setImagePreview(null);
+              }}
+              className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
+            >
+              ×
+            </button>
+          </div>
+        )}
         
         <div className="mt-4 flex items-center justify-between">
           <label className="flex items-center gap-2 cursor-pointer text-gray-600 hover:text-gray-800">
@@ -127,10 +188,11 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={handleFileChange}
+              disabled={isLoading}
             />
             <Image className="h-5 w-5" />
-            {file ? 'Image selected' : 'Add image'}
+            {file ? 'Change image' : 'Add image'}
           </label>
           
           <button
@@ -142,6 +204,10 @@ export default function CreatePost({ onPostCreated }: CreatePostProps) {
             Post
           </button>
         </div>
+
+        {error && (
+          <p className="mt-2 text-sm text-red-500">{error}</p>
+        )}
       </form>
     </div>
   );
