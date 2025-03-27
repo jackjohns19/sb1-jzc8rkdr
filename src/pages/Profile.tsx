@@ -165,37 +165,36 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
     
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
+    }
+    
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image size should be less than 5MB');
+      return;
+    }
+    
     setAvatarFile(file);
     setAvatarPreview(URL.createObjectURL(file));
+    setError(null);
   };
 
-  const uploadAvatar = async (): Promise<string | null> => {
-    if (!avatarFile || !user) return profile?.avatar_url || null;
-    
-    try {
-      setUploadingAvatar(true);
-      
-      const fileExt = avatarFile.name.split('.').pop();
-      const fileName = `${user.id}_${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('profiles')
-        .upload(filePath, avatarFile);
-      
-      if (uploadError) throw uploadError;
-      
-      const { data: { publicUrl } } = supabase.storage
-        .from('profiles')
-        .getPublicUrl(filePath);
-      
-      return publicUrl;
-    } catch (error) {
-      console.error('Avatar upload error:', error);
-      return profile?.avatar_url || null;
-    } finally {
-      setUploadingAvatar(false);
-    }
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert file to base64'));
+        }
+      };
+      reader.onerror = (error) => reject(error);
+    });
   };
 
   const saveProfile = async () => {
@@ -210,29 +209,68 @@ export default function Profile() {
         return;
       }
       
-      // Upload avatar if changed
+      // Handle avatar upload if changed
       let avatarUrl = profile?.avatar_url || null;
       if (avatarFile) {
-        avatarUrl = await uploadAvatar();
-      }
-      
-      // Update profile
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          username: username.trim(),
-          full_name: fullName.trim() || null,
-          bio: bio.trim() || null,
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
-      
-      if (error) {
-        throw error;
+        try {
+          setUploadingAvatar(true);
+          
+          // Convert image to base64
+          const base64Image = await convertToBase64(avatarFile);
+          
+          // Update profile with base64 image
+          const { data, error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              username: username.trim(),
+              full_name: fullName.trim() || null,
+              bio: bio.trim() || null,
+              avatar_url: base64Image,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id)
+            .select()
+            .single();
+          
+          if (updateError) throw updateError;
+          
+          // Also update localStorage if we're using that
+          if (localStorage.getItem(`profile_${user.id}`)) {
+            localStorage.setItem(`profile_${user.id}`, JSON.stringify(data));
+          }
+          
+          setProfile(data);
+          setEditing(false);
+          
+          // Clean up avatar preview URL
+          if (avatarPreview) {
+            URL.revokeObjectURL(avatarPreview);
+            setAvatarPreview(null);
+          }
+          setAvatarFile(null);
+        } catch (error) {
+          console.error('Error uploading avatar:', error);
+          setError('Failed to upload avatar');
+          return;
+        } finally {
+          setUploadingAvatar(false);
+        }
       } else {
+        // Update profile without changing avatar
+        const { data, error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            username: username.trim(),
+            full_name: fullName.trim() || null,
+            bio: bio.trim() || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id)
+          .select()
+          .single();
+        
+        if (updateError) throw updateError;
+        
         // Also update localStorage if we're using that
         if (localStorage.getItem(`profile_${user.id}`)) {
           localStorage.setItem(`profile_${user.id}`, JSON.stringify(data));
@@ -240,17 +278,10 @@ export default function Profile() {
         
         setProfile(data);
         setEditing(false);
-        
-        // Clean up avatar preview URL
-        if (avatarPreview) {
-          URL.revokeObjectURL(avatarPreview);
-          setAvatarPreview(null);
-        }
-        setAvatarFile(null);
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      alert('Failed to update profile');
+      setError('Failed to update profile');
     } finally {
       setSavingProfile(false);
     }
@@ -324,8 +355,13 @@ export default function Profile() {
                         accept="image/*"
                         className="hidden"
                         onChange={handleAvatarChange}
+                        disabled={uploadingAvatar}
                       />
-                      <Upload className="h-8 w-8" />
+                      {uploadingAvatar ? (
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                      ) : (
+                        <Upload className="h-8 w-8" />
+                      )}
                     </label>
                   </div>
                 ) : (
@@ -390,6 +426,7 @@ export default function Profile() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Username"
                     required
+                    disabled={savingProfile}
                   />
                 </div>
                 
@@ -403,6 +440,7 @@ export default function Profile() {
                     onChange={(e) => setFullName(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Your full name"
+                    disabled={savingProfile}
                   />
                 </div>
                 
@@ -416,6 +454,7 @@ export default function Profile() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                     placeholder="Tell us about yourself"
                     rows={4}
+                    disabled={savingProfile}
                   />
                 </div>
               </div>

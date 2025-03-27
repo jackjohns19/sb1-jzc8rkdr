@@ -50,7 +50,7 @@ export default function Navbar() {
           </div>
           
           <div className="flex justify-center flex-1">
-            <h1 className="text-xl font-bold text-gray-800 flex items-center">Social App</h1>
+            <h1 className="text-xl font-bold text-gray-800 flex items-center">FacePlace</h1>
           </div>
           
           <div className="flex items-center space-x-4">
